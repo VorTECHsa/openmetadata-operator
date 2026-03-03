@@ -1,0 +1,31 @@
+apiVersion: openmetadata.vortexa.com/v1alpha1
+kind: OpenMetadataService
+metadata:
+  name: local-test-postgres
+  namespace: default
+spec:
+  serviceType: Postgres
+  displayName: "Local Test Postgres"
+  description: "Test Postgres service created by the OpenMetadata operator"
+  connection:
+    config:
+      type:
+        value: Postgres
+      hostPort:
+        value: "postgres.default:5432"
+      database:
+        value: test_db
+      username:
+        value: test_user
+      authType:
+        password:
+          value: test_password
+      sslMode:
+        value: disable
+      connectionOptions: {}
+      connectionArguments: {}
+      supportsMetadataExtraction:
+        value: true
+      supportsQueryComment:
+        value: true
+  openMetadataConnectionRef: om-connection

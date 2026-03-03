@@ -1,0 +1,271 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: ingestionpipelines.openmetadata.vortexa.com
+spec:
+  group: openmetadata.vortexa.com
+  names:
+    kind: IngestionPipeline
+    listKind: IngestionPipelineList
+    plural: ingestionpipelines
+    singular: ingestionpipeline
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.forOpenMetadata.pipelineType
+      name: Pipeline Type
+      type: string
+    - jsonPath: .status.deployed
+      name: Deployed
+      type: boolean
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          IngestionPipeline is the Schema for the ingestionpipelines API.
+          It declaratively manages an ingestion pipeline in OpenMetadata.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: IngestionPipelineSpec defines the desired state of an IngestionPipeline.
+            properties:
+              forOpenMetadata:
+                description: ForOpenMetadata contains the fields forwarded to the
+                  OpenMetadata API.
+                properties:
+                  airflowConfig:
+                    description: AirflowConfig holds Airflow DAG scheduling configuration.
+                    properties:
+                      concurrency:
+                        default: 1
+                        description: Concurrency controls how many tasks can run in
+                          parallel.
+                        type: integer
+                      maxActiveRuns:
+                        default: 1
+                        description: MaxActiveRuns is the maximum number of active
+                          DAG runs.
+                        type: integer
+                      pausePipeline:
+                        description: PausePipeline controls whether the pipeline is
+                          paused after deployment.
+                        type: boolean
+                      pipelineCatchup:
+                        description: PipelineCatchup controls whether Airflow should
+                          catch up on missed runs.
+                        type: boolean
+                      pipelineTimezone:
+                        default: UTC
+                        description: PipelineTimezone is an IANA timezone name for
+                          the pipeline schedule (e.g. "UTC", "Europe/London").
+                        type: string
+                      retries:
+                        default: 0
+                        description: Retries is the number of times to retry on failure.
+                        type: integer
+                      retryDelay:
+                        default: 300
+                        description: RetryDelay is the number of seconds between retries.
+                        type: integer
+                      scheduleInterval:
+                        description: ScheduleInterval is a cron expression for the
+                          pipeline schedule.
+                        type: string
+                      startDate:
+                        description: StartDate for the Airflow DAG in ISO 8601 format.
+                        format: date-time
+                        type: string
+                    type: object
+                  description:
+                    description: Description of the pipeline.
+                    type: string
+                  displayName:
+                    description: DisplayName is a human-readable name shown in the
+                      OpenMetadata UI.
+                    type: string
+                  pipelineType:
+                    description: PipelineType is the OpenMetadata pipeline type.
+                    enum:
+                    - metadata
+                    - usage
+                    - lineage
+                    - profiler
+                    - autoClassification
+                    - TestSuite
+                    - dataInsight
+                    - elasticSearchReindex
+                    - dbt
+                    - application
+                    type: string
+                  service:
+                    description: |-
+                      Service identifies the service entity this pipeline belongs to in OpenMetadata.
+                      For metadata/profiler/usage/lineage pipelines: reference a databaseService, messagingService, etc.
+                      For TestSuite pipelines: reference a testSuite.
+                      Matches the "service" field in the OM API.
+                    properties:
+                      fullyQualifiedName:
+                        description: FullyQualifiedName of the referenced entity.
+                        minLength: 1
+                        type: string
+                      type:
+                        description: Type of the referenced entity (e.g. "databaseService",
+                          "testSuite").
+                        enum:
+                        - databaseService
+                        - messagingService
+                        - dashboardService
+                        - pipelineService
+                        - mlmodelService
+                        - storageService
+                        - searchService
+                        - metadataService
+                        - apiService
+                        - testSuite
+                        type: string
+                    required:
+                    - fullyQualifiedName
+                    - type
+                    type: object
+                  sourceConfig:
+                    description: |-
+                      SourceConfig holds the opaque pipeline-specific source configuration
+                      forwarded to the OpenMetadata API. The shape depends on pipelineType.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                required:
+                - airflowConfig
+                - pipelineType
+                - service
+                - sourceConfig
+                type: object
+              openMetadataConnectionRef:
+                description: |-
+                  OpenMetadataConnectionRef is the name of the OpenMetadataConnection resource
+                  in the same namespace that defines the target OpenMetadata instance.
+                minLength: 1
+                type: string
+            required:
+            - forOpenMetadata
+            - openMetadataConnectionRef
+            type: object
+          status:
+            description: IngestionPipelineStatus defines the observed state of an
+              IngestionPipeline.
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              deployed:
+                description: Deployed indicates whether the pipeline has been successfully
+                  deployed to Airflow.
+                type: boolean
+              fullyQualifiedName:
+                description: FullyQualifiedName as stored in OpenMetadata.
+                type: string
+              lastReconcileTime:
+                description: LastReconcileTime is the timestamp of the last successful
+                  reconciliation.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              openmetadataId:
+                description: OpenMetadataID is the UUID assigned by OpenMetadata.
+                type: string
+              remoteVersion:
+                description: RemoteVersion is the entity version last seen in OpenMetadata.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

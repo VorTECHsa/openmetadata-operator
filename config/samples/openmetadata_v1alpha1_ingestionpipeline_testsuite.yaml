@@ -1,0 +1,18 @@
+apiVersion: openmetadata.vortexa.com/v1alpha1
+kind: IngestionPipeline
+metadata:
+  name: orders-test-suite-pipeline
+  namespace: default
+spec:
+  forOpenMetadata:
+    pipelineType: TestSuite
+    service:
+      fullyQualifiedName: my-postgres-service.my_db.public.orders.testSuite
+      type: testSuite
+    sourceConfig:
+      config:
+        type: TestSuite
+        entityFullyQualifiedName: my-postgres-service.my_db.public.orders.testSuite
+    airflowConfig:
+      scheduleInterval: "0 3 * * *"
+  openMetadataConnectionRef: om-connection

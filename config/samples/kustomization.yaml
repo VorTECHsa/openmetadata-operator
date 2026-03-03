@@ -1,0 +1,11 @@
+## Append samples of your project ##
+resources:
+- openmetadata_v1alpha1_openmetadataconnection.yaml
+- openmetadata_v1alpha1_openmetadataservice.yaml
+- openmetadata_v1alpha1_ingestionpipeline_metadata.yaml
+- openmetadata_v1alpha1_ingestionpipeline_profiler.yaml
+- openmetadata_v1alpha1_ingestionpipeline_testsuite.yaml
+- openmetadata_v1alpha1_openmetadatatestcase.yaml
+- openmetadata_v1alpha1_openmetadatatestcase_with_params.yaml
+- openmetadata_v1alpha1_openmetadatatestcase_sql.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

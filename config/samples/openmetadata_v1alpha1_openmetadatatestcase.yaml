@@ -1,0 +1,11 @@
+apiVersion: openmetadata.vortexa.com/v1alpha1
+kind: OpenMetadataTestCase
+metadata:
+  name: orders-status-not-null
+  namespace: default
+spec:
+  forOpenMetadata:
+    testDefinition: columnValuesToBeNotNull
+    entityLink: "<#E::table::my-postgres-service.my_db.public.orders::columns::status>"
+    displayName: "Orders Status Not Null"
+  openMetadataConnectionRef: om-connection

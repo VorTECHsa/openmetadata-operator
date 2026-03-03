@@ -1,0 +1,26 @@
+apiVersion: openmetadata.vortexa.com/v1alpha1
+kind: IngestionPipeline
+metadata:
+  name: my-postgres-metadata
+  namespace: default
+spec:
+  forOpenMetadata:
+    pipelineType: metadata
+    service:
+      fullyQualifiedName: my-postgres-service
+      type: databaseService
+    sourceConfig:
+      config:
+        type: DatabaseMetadata
+        includeTables: true
+        includeViews: true
+        markDeletedTables: true
+        schemaFilterPattern:
+          includes:
+            - public
+    airflowConfig:
+      scheduleInterval: "0 2 * * *"
+      concurrency: 1
+      retries: 2
+      retryDelay: 300
+  openMetadataConnectionRef: om-connection

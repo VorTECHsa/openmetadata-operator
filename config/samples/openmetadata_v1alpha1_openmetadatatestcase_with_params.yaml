@@ -1,0 +1,15 @@
+apiVersion: openmetadata.vortexa.com/v1alpha1
+kind: OpenMetadataTestCase
+metadata:
+  name: orders-amount-range
+  namespace: default
+spec:
+  forOpenMetadata:
+    testDefinition: columnValuesToBeBetween
+    entityLink: "<#E::table::my-postgres-service.my_db.public.orders::columns::amount>"
+    parameterValues:
+      - name: minValue
+        value: "0"
+      - name: maxValue
+        value: "100000"
+  openMetadataConnectionRef: om-connection

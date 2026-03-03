@@ -1,0 +1,19 @@
+apiVersion: openmetadata.vortexa.com/v1alpha1
+kind: OpenMetadataTestCase
+metadata:
+  name: orders-no-negative-totals
+  namespace: default
+spec:
+  forOpenMetadata:
+    testDefinition: tableCustomSQLQuery
+    entityLink: "<#E::table::my-postgres-service.my_db.public.orders>"
+    parameterValues:
+      - name: sqlExpression
+        value: "SELECT COUNT(*) FROM orders WHERE total < 0"
+      - name: strategy
+        value: "COUNT"
+      - name: threshold
+        value: "0"
+    displayName: "No Negative Order Totals"
+    description: "Ensures no orders have a negative total amount."
+  openMetadataConnectionRef: om-connection

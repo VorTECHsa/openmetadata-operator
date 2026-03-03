@@ -1,0 +1,11 @@
+apiVersion: openmetadata.vortexa.com/v1alpha1
+kind: OpenMetadataConnection
+metadata:
+  name: om-connection
+  namespace: default
+spec:
+  url: "http://openmetadata-server.openmetadata:8585/api"
+  authSecretRef:
+    name: openmetadata-api-secret
+    namespace: openmetadata
+    key: token

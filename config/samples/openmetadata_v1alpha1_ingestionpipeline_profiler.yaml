@@ -1,0 +1,20 @@
+apiVersion: openmetadata.vortexa.com/v1alpha1
+kind: IngestionPipeline
+metadata:
+  name: my-postgres-profiler
+  namespace: default
+spec:
+  forOpenMetadata:
+    pipelineType: profiler
+    service:
+      fullyQualifiedName: my-postgres-service
+      type: databaseService
+    sourceConfig:
+      config:
+        type: Profiler
+        profileSample: 20
+        computeTableMetrics: true
+        computeColumnMetrics: true
+    airflowConfig:
+      scheduleInterval: "0 3 * * 0"
+  openMetadataConnectionRef: om-connection

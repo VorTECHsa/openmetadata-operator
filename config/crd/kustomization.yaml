@@ -1,0 +1,6 @@
+resources:
+- bases/openmetadata.vortexa.com_openmetadataconnections.yaml
+- bases/openmetadata.vortexa.com_openmetadataservices.yaml
+- bases/openmetadata.vortexa.com_ingestionpipelines.yaml
+- bases/openmetadata.vortexa.com_openmetadatatestcases.yaml
+# +kubebuilder:scaffold:crdkustomizeresource

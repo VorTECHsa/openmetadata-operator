@@ -1,0 +1,61 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - openmetadata.vortexa.com
+  resources:
+  - ingestionpipelines
+  - openmetadataservices
+  - openmetadatatestcases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - openmetadata.vortexa.com
+  resources:
+  - ingestionpipelines/finalizers
+  - openmetadataservices/finalizers
+  - openmetadatatestcases/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - openmetadata.vortexa.com
+  resources:
+  - ingestionpipelines/status
+  - openmetadataservices/status
+  - openmetadatatestcases/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - openmetadata.vortexa.com
+  resources:
+  - openmetadataconnections
+  verbs:
+  - get
+  - list
+  - watch

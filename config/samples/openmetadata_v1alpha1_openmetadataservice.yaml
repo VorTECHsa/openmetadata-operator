@@ -1,0 +1,44 @@
+apiVersion: openmetadata.vortexa.com/v1alpha1
+kind: OpenMetadataService
+metadata:
+  labels:
+    app.kubernetes.io/name: openmetadata-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: my-app-databaseservice
+  namespace: default
+spec:
+  forOpenMetadata:
+    serviceType: Postgres
+    displayName: "My App Database Service"
+    description: "Postgres database service managed by the OpenMetadata operator"
+    connection:
+      config:
+        type:
+          value: Postgres
+        hostPort:
+          valueFrom:
+            secretKeyRef:
+              name: my-database-credentials
+              key: endpoint
+        database:
+          value: my_database
+        username:
+          valueFrom:
+            secretKeyRef:
+              name: my-database-credentials
+              key: username
+        authType:
+          password:
+            valueFrom:
+              secretKeyRef:
+                name: my-database-credentials
+                key: password
+        sslMode:
+          value: prefer
+        connectionOptions: {}
+        connectionArguments: {}
+        supportsMetadataExtraction:
+          value: true
+        supportsQueryComment:
+          value: true
+  openMetadataConnectionRef: om-connection
