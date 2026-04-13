@@ -25,8 +25,8 @@ type OpenMetadataTestCaseSpec struct {
 	// ForOpenMetadata contains the fields forwarded to the OpenMetadata API.
 	ForOpenMetadata TestCaseOMSpec `json:"forOpenMetadata"`
 
-	// OpenMetadataConnectionRef is the name of the OpenMetadataConnection resource
-	// in the same namespace that defines the target OpenMetadata instance.
+	// OpenMetadataConnectionRef is the name of the cluster-scoped OpenMetadataConnection
+	// resource that defines the target OpenMetadata instance.
 	// +kubebuilder:validation:MinLength=1
 	OpenMetadataConnectionRef string `json:"openMetadataConnectionRef"`
 }
