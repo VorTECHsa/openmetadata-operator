@@ -40,11 +40,16 @@ type stubPipelineClient struct {
 	upsertErr      error
 	deployErr      error
 	deleteErr      error
-	entityID       string
-	entityErr      error
+
+	// entityIDs maps "typePath/fqn" to a UUID for GetEntityByName lookups.
+	entityIDs map[string]string
+
+	// capturedReq stores the last request passed to UpsertPipeline.
+	capturedReq *omclient.PipelineRequest
 }
 
-func (s *stubPipelineClient) UpsertPipeline(_ context.Context, _ omclient.PipelineRequest) (*omclient.PipelineResponse, error) {
+func (s *stubPipelineClient) UpsertPipeline(_ context.Context, req omclient.PipelineRequest) (*omclient.PipelineResponse, error) {
+	s.capturedReq = &req
 	return s.upsertResp, s.upsertErr
 }
 
@@ -64,8 +69,11 @@ func (s *stubPipelineClient) DeletePipeline(_ context.Context, _ string) error {
 	return s.deleteErr
 }
 
-func (s *stubPipelineClient) GetEntityByName(_ context.Context, _, _ string) (string, error) {
-	return s.entityID, s.entityErr
+func (s *stubPipelineClient) GetEntityByName(_ context.Context, path, fqn string) (string, error) {
+	if id, ok := s.entityIDs[path+"/"+fqn]; ok {
+		return id, nil
+	}
+	return "", &omclient.APIError{StatusCode: 404, Body: "not found"}
 }
 
 func newTestPipelineCR() *omv1alpha1.IngestionPipeline {
@@ -113,9 +121,11 @@ func TestPipelineReconcileCreateAndDeploy(t *testing.T) {
 		Build()
 
 	stub := &stubPipelineClient{
-		entityID: testServiceEntityID,
-		getResp:  nil, // pipeline does not exist
-		getErr:   &omclient.APIError{StatusCode: 404},
+		entityIDs: map[string]string{
+			"services/databaseServices/my-postgres-service": testServiceEntityID,
+		},
+		getResp: nil, // pipeline does not exist
+		getErr:  &omclient.APIError{StatusCode: 404},
 		upsertResp: &omclient.PipelineResponse{
 			ID:                 testPipelineID,
 			Name:               "test-metadata",
@@ -177,7 +187,9 @@ func TestPipelineReconcileInSync(t *testing.T) {
 		Build()
 
 	stub := &stubPipelineClient{
-		entityID: testServiceEntityID,
+		entityIDs: map[string]string{
+			"services/databaseServices/my-postgres-service": testServiceEntityID,
+		},
 		getResp: &omclient.PipelineResponse{
 			ID:       testPipelineID,
 			Name:     "test-metadata",
@@ -220,9 +232,11 @@ func TestPipelineReconcileDeployFailure(t *testing.T) {
 		Build()
 
 	stub := &stubPipelineClient{
-		entityID: testServiceEntityID,
-		getResp:  nil,
-		getErr:   &omclient.APIError{StatusCode: 404},
+		entityIDs: map[string]string{
+			"services/databaseServices/my-postgres-service": testServiceEntityID,
+		},
+		getResp: nil,
+		getErr:  &omclient.APIError{StatusCode: 404},
 		upsertResp: &omclient.PipelineResponse{
 			ID:                 testPipelineID,
 			Name:               "test-metadata",
@@ -267,7 +281,7 @@ func TestPipelineReconcileServiceNotFound(t *testing.T) {
 		Build()
 
 	stub := &stubPipelineClient{
-		entityErr: &omclient.APIError{StatusCode: 404, Body: "not found"},
+		// entityIDs intentionally nil so service lookup returns 404
 	}
 
 	h := &PipelineHandler{
@@ -304,7 +318,9 @@ func TestPipelineReconcileDetectsDrift(t *testing.T) {
 		Build()
 
 	stub := &stubPipelineClient{
-		entityID: testServiceEntityID,
+		entityIDs: map[string]string{
+			"services/databaseServices/my-postgres-service": testServiceEntityID,
+		},
 		getResp: &omclient.PipelineResponse{
 			ID:       testPipelineID,
 			Name:     "test-metadata",
@@ -362,7 +378,9 @@ func TestPipelineReconcileRedeploysUndeployed(t *testing.T) {
 		Build()
 
 	stub := &stubPipelineClient{
-		entityID: testServiceEntityID,
+		entityIDs: map[string]string{
+			"services/databaseServices/my-postgres-service": testServiceEntityID,
+		},
 		getResp: &omclient.PipelineResponse{
 			ID:       testPipelineID,
 			Name:     "test-metadata",
@@ -405,7 +423,9 @@ func TestPipelineReconcileUpsertFailure(t *testing.T) {
 		Build()
 
 	stub := &stubPipelineClient{
-		entityID:  testServiceEntityID,
+		entityIDs: map[string]string{
+			"services/databaseServices/my-postgres-service": testServiceEntityID,
+		},
 		getResp:   nil,
 		getErr:    &omclient.APIError{StatusCode: 404},
 		upsertErr: fmt.Errorf("connection refused"),
@@ -582,5 +602,104 @@ func TestBuildAirflowConfigEmpty(t *testing.T) {
 
 	if len(result) != 0 {
 		t.Errorf("expected empty map for zero-value config, got %v", result)
+	}
+}
+
+func TestPipelineReconcileIncludesResolvedOwners(t *testing.T) {
+	scheme := newTestScheme()
+	pipeline := newTestPipelineCR()
+	pipeline.Spec.ForOpenMetadata.Owners = []omv1alpha1.EntityReference{
+		{FullyQualifiedName: "platform-team", Type: omv1alpha1.EntityTypeTeam},
+		{FullyQualifiedName: "alice", Type: omv1alpha1.EntityTypeUser},
+	}
+	secret := newAuthSecret()
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(pipeline, secret, newTestConnection()).
+		WithStatusSubresource(pipeline).
+		Build()
+
+	stub := &stubPipelineClient{
+		entityIDs: map[string]string{
+			"services/databaseServices/my-postgres-service": testServiceEntityID,
+			"teams/platform-team":                           testTeamOwnerUUID,
+			"users/alice":                                   testUserOwnerUUID,
+		},
+		getResp: nil,
+		getErr:  &omclient.APIError{StatusCode: 404},
+		upsertResp: &omclient.PipelineResponse{
+			ID:                 testPipelineID,
+			Name:               "test-metadata",
+			FullyQualifiedName: testPipelineFQN,
+			PipelineType:       "metadata",
+			Deployed:           false,
+			Version:            0.1,
+		},
+		postDeployResp: &omclient.PipelineResponse{
+			ID: testPipelineID, Version: 0.2, Deployed: true,
+		},
+	}
+
+	h := &PipelineHandler{
+		Client:      c,
+		NewOMClient: func(_, _ string) omclient.PipelineClient { return stub },
+	}
+
+	if _, err := h.Reconcile(context.Background(), pipeline); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stub.capturedReq == nil {
+		t.Fatal("expected upsert request to be captured")
+	}
+	if len(stub.capturedReq.Owners) != 2 {
+		t.Fatalf("expected 2 owners, got %d", len(stub.capturedReq.Owners))
+	}
+	if stub.capturedReq.Owners[0].ID != testTeamOwnerUUID || stub.capturedReq.Owners[0].Type != string(omv1alpha1.EntityTypeTeam) {
+		t.Errorf("unexpected first owner: %+v", stub.capturedReq.Owners[0])
+	}
+	if stub.capturedReq.Owners[1].ID != testUserOwnerUUID || stub.capturedReq.Owners[1].Type != string(omv1alpha1.EntityTypeUser) {
+		t.Errorf("unexpected second owner: %+v", stub.capturedReq.Owners[1])
+	}
+}
+
+func TestPipelineReconcileUnsupportedOwnerTypeDoesNotRequeue(t *testing.T) {
+	scheme := newTestScheme()
+	pipeline := newTestPipelineCR()
+	pipeline.Spec.ForOpenMetadata.Owners = []omv1alpha1.EntityReference{
+		{FullyQualifiedName: "some-db", Type: omv1alpha1.EntityTypeDatabaseService},
+	}
+	secret := newAuthSecret()
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(pipeline, secret, newTestConnection()).
+		WithStatusSubresource(pipeline).
+		Build()
+
+	stub := &stubPipelineClient{
+		entityIDs: map[string]string{
+			"services/databaseServices/my-postgres-service": testServiceEntityID,
+		},
+		getResp: nil,
+		getErr:  &omclient.APIError{StatusCode: 404},
+	}
+
+	h := &PipelineHandler{
+		Client:      c,
+		NewOMClient: func(_, _ string) omclient.PipelineClient { return stub },
+	}
+
+	result, err := h.Reconcile(context.Background(), pipeline)
+	if err != nil {
+		t.Fatalf("expected nil error for permanent spec error, got %v", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Errorf("expected no requeue for permanent spec error, got %v", result.RequeueAfter)
+	}
+
+	readyCond := condition.FindReady(pipeline.Status.Conditions)
+	if readyCond == nil || readyCond.Reason != omv1alpha1.ReasonOwnerResolutionFailed {
+		t.Errorf("expected reason %q, got %+v", omv1alpha1.ReasonOwnerResolutionFailed, readyCond)
 	}
 }

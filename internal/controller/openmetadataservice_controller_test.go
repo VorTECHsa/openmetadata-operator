@@ -58,6 +58,10 @@ func (s *stubClient) DeleteService(_ context.Context, _, _ string) error {
 	return s.deleteErr
 }
 
+func (s *stubClient) GetEntityByName(_ context.Context, _, _ string) (string, error) {
+	return "", &omclient.APIError{StatusCode: 404, Body: "not found"}
+}
+
 func newTestReconciler(stub omclient.ServiceClient) *OpenMetadataServiceReconciler {
 	return &OpenMetadataServiceReconciler{
 		Client: k8sClient,

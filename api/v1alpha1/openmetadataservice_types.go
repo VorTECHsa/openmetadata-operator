@@ -46,6 +46,12 @@ type ServiceOMSpec struct {
 	// +optional
 	Description string `json:"description,omitempty"`
 
+	// Owners is the list of users and/or teams that own this service in OpenMetadata.
+	// Each entry references a user or team by fullyQualifiedName; the operator
+	// resolves these to UUIDs at reconcile time.
+	// +optional
+	Owners []EntityReference `json:"owners,omitempty"`
+
 	// Connection holds the opaque connection configuration forwarded to OpenMetadata.
 	Connection ConnectionSpec `json:"connection"`
 }

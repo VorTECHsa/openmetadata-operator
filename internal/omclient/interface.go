@@ -31,6 +31,10 @@ type ServiceClient interface {
 
 	// DeleteService deletes a service by ID with recursive and hard delete.
 	DeleteService(ctx context.Context, endpoint, id string) error
+
+	// GetEntityByName retrieves any entity by type path and FQN, returning its ID.
+	// Used to resolve owner references (users/teams) to OM UUIDs.
+	GetEntityByName(ctx context.Context, entityTypePath, fqn string) (string, error)
 }
 
 // PipelineClient defines operations for managing ingestion pipelines.
@@ -64,4 +68,8 @@ type TestCaseClient interface {
 
 	// DeleteTestCase deletes a test case by ID with hard delete.
 	DeleteTestCase(ctx context.Context, id string) error
+
+	// GetEntityByName retrieves any entity by type path and FQN, returning its ID.
+	// Used to resolve owner references (users/teams) to OM UUIDs.
+	GetEntityByName(ctx context.Context, entityTypePath, fqn string) (string, error)
 }

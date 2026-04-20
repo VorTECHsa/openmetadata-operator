@@ -56,6 +56,10 @@ func (s *stubTestCaseClient) DeleteTestCase(_ context.Context, _ string) error {
 	return s.deleteErr
 }
 
+func (s *stubTestCaseClient) GetEntityByName(_ context.Context, _, _ string) (string, error) {
+	return "", &omclient.APIError{StatusCode: 404, Body: "not found"}
+}
+
 func newTestTestCaseReconciler(stub omclient.TestCaseClient) *OpenMetadataTestCaseReconciler {
 	return &OpenMetadataTestCaseReconciler{
 		Client: k8sClient,

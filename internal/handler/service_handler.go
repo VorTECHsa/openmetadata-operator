@@ -22,6 +22,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -146,11 +147,22 @@ func (h *ServiceHandler) Reconcile(ctx context.Context, svc *omv1alpha1.OpenMeta
 
 	// --- Converge ---
 
+	resolvedOwners, err := resolveOwners(ctx, omClient, svc.Spec.ForOpenMetadata.Owners)
+	if err != nil {
+		logger.Error(err, "Failed to resolve owners")
+		h.setConditionAndPersist(ctx, svc, metav1.ConditionFalse, omv1alpha1.ReasonOwnerResolutionFailed, err.Error())
+		if errors.Is(err, ErrUnsupportedOwnerType) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
 	serviceReq := omclient.ServiceRequest{
 		Name:        svc.Name,
 		ServiceType: string(svc.Spec.ForOpenMetadata.ServiceType),
 		DisplayName: svc.Spec.ForOpenMetadata.DisplayName,
 		Description: svc.Spec.ForOpenMetadata.Description,
+		Owners:      resolvedOwners,
 		Connection:  map[string]any{"config": resolvedConfig},
 	}
 

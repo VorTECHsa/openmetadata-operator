@@ -19,6 +19,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -192,16 +193,27 @@ func (h *PipelineHandler) Reconcile(ctx context.Context, pipeline *omv1alpha1.In
 	if action.needsUpsert() {
 		airflowConfig := buildAirflowConfig(pipeline.Spec.ForOpenMetadata.AirflowConfig)
 
+		resolvedOwners, err := resolveOwners(ctx, omClient, pipeline.Spec.ForOpenMetadata.Owners)
+		if err != nil {
+			logger.Error(err, "Failed to resolve owners")
+			h.setConditionAndPersist(ctx, pipeline, metav1.ConditionFalse, omv1alpha1.ReasonOwnerResolutionFailed, err.Error())
+			if errors.Is(err, ErrUnsupportedOwnerType) {
+				return ctrl.Result{}, nil
+			}
+			return ctrl.Result{}, err
+		}
+
 		pipelineReq := omclient.PipelineRequest{
 			Name:          pipeline.Name,
 			PipelineType:  string(pipeline.Spec.ForOpenMetadata.PipelineType),
 			DisplayName:   pipeline.Spec.ForOpenMetadata.DisplayName,
 			Description:   pipeline.Spec.ForOpenMetadata.Description,
+			Owners:        resolvedOwners,
 			SourceConfig:  sourceConfig,
 			AirflowConfig: airflowConfig,
-			Service: map[string]any{
-				"id":   serviceID,
-				"type": string(pipeline.Spec.ForOpenMetadata.Service.Type),
+			Service: omclient.EntityRef{
+				ID:   serviceID,
+				Type: string(pipeline.Spec.ForOpenMetadata.Service.Type),
 			},
 		}
 
