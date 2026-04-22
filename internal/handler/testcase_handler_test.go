@@ -36,9 +36,16 @@ type stubTestCaseClient struct {
 	upsertResp *omclient.TestCaseResponse
 	upsertErr  error
 	deleteErr  error
+
+	// entityIDs maps "typePath/fqn" to a UUID for GetEntityByName lookups.
+	entityIDs map[string]string
+
+	// capturedReq stores the last request passed to UpsertTestCase.
+	capturedReq *omclient.TestCaseRequest
 }
 
-func (s *stubTestCaseClient) UpsertTestCase(_ context.Context, _ omclient.TestCaseRequest) (*omclient.TestCaseResponse, error) {
+func (s *stubTestCaseClient) UpsertTestCase(_ context.Context, req omclient.TestCaseRequest) (*omclient.TestCaseResponse, error) {
+	s.capturedReq = &req
 	return s.upsertResp, s.upsertErr
 }
 
@@ -48,6 +55,13 @@ func (s *stubTestCaseClient) GetTestCaseByFQN(_ context.Context, _ string) (*omc
 
 func (s *stubTestCaseClient) DeleteTestCase(_ context.Context, _ string) error {
 	return s.deleteErr
+}
+
+func (s *stubTestCaseClient) GetEntityByName(_ context.Context, path, fqn string) (string, error) {
+	if id, ok := s.entityIDs[path+"/"+fqn]; ok {
+		return id, nil
+	}
+	return "", &omclient.APIError{StatusCode: 404, Body: "not found"}
 }
 
 const (
@@ -351,5 +365,98 @@ func TestTestCaseHandleDeletionWithoutFinalizer(t *testing.T) {
 	}
 	if result.RequeueAfter != 0 {
 		t.Errorf("expected no requeue, got %v", result.RequeueAfter)
+	}
+}
+
+func TestTestCaseReconcileIncludesResolvedOwners(t *testing.T) {
+	scheme := newTestScheme()
+	tc := newTestCaseCR()
+	tc.Spec.ForOpenMetadata.Owners = []omv1alpha1.EntityReference{
+		{FullyQualifiedName: "platform-team", Type: omv1alpha1.EntityTypeTeam},
+		{FullyQualifiedName: "alice", Type: omv1alpha1.EntityTypeUser},
+	}
+	secret := newAuthSecret()
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(tc, secret, newTestConnection()).
+		WithStatusSubresource(tc).
+		Build()
+
+	stub := &stubTestCaseClient{
+		getResp: nil,
+		getErr:  &omclient.APIError{StatusCode: 404},
+		entityIDs: map[string]string{
+			"teams/platform-team": testTeamOwnerUUID,
+			"users/alice":         testUserOwnerUUID,
+		},
+		upsertResp: &omclient.TestCaseResponse{
+			ID:                 testTestCaseID,
+			Name:               "orders-status-not-null",
+			FullyQualifiedName: testTestCaseFQN,
+			TestSuite: struct {
+				ID string `json:"id"`
+			}{ID: testSuiteID},
+			Version: 0.1,
+		},
+	}
+
+	h := &TestCaseHandler{
+		Client:      c,
+		NewOMClient: func(_, _ string) omclient.TestCaseClient { return stub },
+	}
+
+	if _, err := h.Reconcile(context.Background(), tc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stub.capturedReq == nil {
+		t.Fatal("expected upsert request to be captured")
+	}
+	if len(stub.capturedReq.Owners) != 2 {
+		t.Fatalf("expected 2 owners, got %d", len(stub.capturedReq.Owners))
+	}
+	if stub.capturedReq.Owners[0].ID != testTeamOwnerUUID || stub.capturedReq.Owners[0].Type != string(omv1alpha1.EntityTypeTeam) {
+		t.Errorf("unexpected first owner: %+v", stub.capturedReq.Owners[0])
+	}
+	if stub.capturedReq.Owners[1].ID != testUserOwnerUUID || stub.capturedReq.Owners[1].Type != string(omv1alpha1.EntityTypeUser) {
+		t.Errorf("unexpected second owner: %+v", stub.capturedReq.Owners[1])
+	}
+}
+
+func TestTestCaseReconcileUnsupportedOwnerTypeDoesNotRequeue(t *testing.T) {
+	scheme := newTestScheme()
+	tc := newTestCaseCR()
+	tc.Spec.ForOpenMetadata.Owners = []omv1alpha1.EntityReference{
+		{FullyQualifiedName: "some-db", Type: omv1alpha1.EntityTypeDatabaseService},
+	}
+	secret := newAuthSecret()
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(tc, secret, newTestConnection()).
+		WithStatusSubresource(tc).
+		Build()
+
+	stub := &stubTestCaseClient{
+		getResp: nil,
+		getErr:  &omclient.APIError{StatusCode: 404},
+	}
+
+	h := &TestCaseHandler{
+		Client:      c,
+		NewOMClient: func(_, _ string) omclient.TestCaseClient { return stub },
+	}
+
+	result, err := h.Reconcile(context.Background(), tc)
+	if err != nil {
+		t.Fatalf("expected nil error for permanent spec error, got %v", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Errorf("expected no requeue for permanent spec error, got %v", result.RequeueAfter)
+	}
+
+	readyCond := condition.FindReady(tc.Status.Conditions)
+	if readyCond == nil || readyCond.Reason != omv1alpha1.ReasonOwnerResolutionFailed {
+		t.Errorf("expected reason %q, got %+v", omv1alpha1.ReasonOwnerResolutionFailed, readyCond)
 	}
 }

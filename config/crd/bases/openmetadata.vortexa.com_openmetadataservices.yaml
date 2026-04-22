@@ -84,6 +84,41 @@ spec:
                     description: DisplayName is a human-readable name shown in the
                       OpenMetadata UI.
                     type: string
+                  owners:
+                    description: |-
+                      Owners is the list of users and/or teams that own this service in OpenMetadata.
+                      Each entry references a user or team by fullyQualifiedName; the operator
+                      resolves these to UUIDs at reconcile time.
+                    items:
+                      description: EntityReference identifies an entity in OpenMetadata
+                        by FQN and type.
+                      properties:
+                        fullyQualifiedName:
+                          description: FullyQualifiedName of the referenced entity.
+                          minLength: 1
+                          type: string
+                        type:
+                          description: Type of the referenced entity (e.g. "databaseService",
+                            "testSuite").
+                          enum:
+                          - databaseService
+                          - messagingService
+                          - dashboardService
+                          - pipelineService
+                          - mlmodelService
+                          - storageService
+                          - searchService
+                          - metadataService
+                          - apiService
+                          - testSuite
+                          - user
+                          - team
+                          type: string
+                      required:
+                      - fullyQualifiedName
+                      - type
+                      type: object
+                    type: array
                   serviceType:
                     description: |-
                       ServiceType is the OpenMetadata service type (e.g. Postgres, Athena, Kafka).

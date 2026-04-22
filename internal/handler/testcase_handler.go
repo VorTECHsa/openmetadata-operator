@@ -18,6 +18,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -102,12 +103,23 @@ func (h *TestCaseHandler) Reconcile(ctx context.Context, tc *omv1alpha1.OpenMeta
 
 	// --- Converge ---
 
+	resolvedOwners, err := resolveOwners(ctx, omClient, tc.Spec.ForOpenMetadata.Owners)
+	if err != nil {
+		logger.Error(err, "Failed to resolve owners")
+		h.setConditionAndPersist(ctx, tc, metav1.ConditionFalse, omv1alpha1.ReasonOwnerResolutionFailed, err.Error())
+		if errors.Is(err, ErrUnsupportedOwnerType) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
 	tcReq := omclient.TestCaseRequest{
 		Name:                        tc.Name,
 		TestDefinition:              tc.Spec.ForOpenMetadata.TestDefinition,
 		EntityLink:                  tc.Spec.ForOpenMetadata.EntityLink,
 		DisplayName:                 tc.Spec.ForOpenMetadata.DisplayName,
 		Description:                 tc.Spec.ForOpenMetadata.Description,
+		Owners:                      resolvedOwners,
 		ComputePassedFailedRowCount: tc.Spec.ForOpenMetadata.ComputePassedFailedRowCount,
 	}
 

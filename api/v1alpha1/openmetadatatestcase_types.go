@@ -58,6 +58,12 @@ type TestCaseOMSpec struct {
 	// ComputePassedFailedRowCount controls whether to compute row counts.
 	// +optional
 	ComputePassedFailedRowCount bool `json:"computePassedFailedRowCount,omitempty"`
+
+	// Owners is the list of users and/or teams that own this test case in OpenMetadata.
+	// Each entry references a user or team by fullyQualifiedName; the operator
+	// resolves these to UUIDs at reconcile time.
+	// +optional
+	Owners []EntityReference `json:"owners,omitempty"`
 }
 
 // TestCaseParameterValue is a name-value pair for test parameters.

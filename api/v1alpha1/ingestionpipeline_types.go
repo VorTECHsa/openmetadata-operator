@@ -40,10 +40,10 @@ const (
 )
 
 // EntityType represents the type of an entity referenced in OpenMetadata.
-// +kubebuilder:validation:Enum=databaseService;messagingService;dashboardService;pipelineService;mlmodelService;storageService;searchService;metadataService;apiService;testSuite
+// +kubebuilder:validation:Enum=databaseService;messagingService;dashboardService;pipelineService;mlmodelService;storageService;searchService;metadataService;apiService;testSuite;user;team
 type EntityType string
 
-// Entity type constants for service entity references.
+// Entity type constants for entity references.
 const (
 	EntityTypeDatabaseService  EntityType = "databaseService"
 	EntityTypeMessagingService EntityType = "messagingService"
@@ -55,6 +55,8 @@ const (
 	EntityTypeMetadataService  EntityType = "metadataService"
 	EntityTypeAPIService       EntityType = "apiService"
 	EntityTypeTestSuite        EntityType = "testSuite"
+	EntityTypeUser             EntityType = "user"
+	EntityTypeTeam             EntityType = "team"
 )
 
 // IngestionPipelineSpec defines the desired state of an IngestionPipeline.
@@ -95,6 +97,12 @@ type IngestionPipelineOMSpec struct {
 	// Description of the pipeline.
 	// +optional
 	Description string `json:"description,omitempty"`
+
+	// Owners is the list of users and/or teams that own this pipeline in OpenMetadata.
+	// Each entry references a user or team by fullyQualifiedName; the operator
+	// resolves these to UUIDs at reconcile time.
+	// +optional
+	Owners []EntityReference `json:"owners,omitempty"`
 }
 
 // EntityReference identifies an entity in OpenMetadata by FQN and type.

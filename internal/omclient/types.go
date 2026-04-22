@@ -16,12 +16,21 @@ limitations under the License.
 
 package omclient
 
+// EntityRef is the API payload form of an OpenMetadata EntityReference. The
+// API requires id and type; other fields (name, fullyQualifiedName) are
+// optional and omitted here since callers always send id+type.
+type EntityRef struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
 // ServiceRequest is the payload for PUT /api/v1/services/{endpoint}.
 type ServiceRequest struct {
 	Name        string         `json:"name"`
 	ServiceType string         `json:"serviceType"`
 	DisplayName string         `json:"displayName,omitempty"`
 	Description string         `json:"description,omitempty"`
+	Owners      []EntityRef    `json:"owners,omitempty"`
 	Connection  map[string]any `json:"connection"`
 }
 
@@ -41,9 +50,10 @@ type PipelineRequest struct {
 	PipelineType  string         `json:"pipelineType"`
 	DisplayName   string         `json:"displayName,omitempty"`
 	Description   string         `json:"description,omitempty"`
+	Owners        []EntityRef    `json:"owners,omitempty"`
 	SourceConfig  map[string]any `json:"sourceConfig"`
 	AirflowConfig map[string]any `json:"airflowConfig"`
-	Service       map[string]any `json:"service"`
+	Service       EntityRef      `json:"service"`
 }
 
 // PipelineResponse is the subset of fields the operator reads from
@@ -64,6 +74,7 @@ type TestCaseRequest struct {
 	EntityLink                  string                   `json:"entityLink"`
 	DisplayName                 string                   `json:"displayName,omitempty"`
 	Description                 string                   `json:"description,omitempty"`
+	Owners                      []EntityRef              `json:"owners,omitempty"`
 	ParameterValues             []TestCaseParameterValue `json:"parameterValues,omitempty"`
 	ComputePassedFailedRowCount bool                     `json:"computePassedFailedRowCount,omitempty"`
 }

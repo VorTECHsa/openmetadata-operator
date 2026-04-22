@@ -63,7 +63,7 @@ func TestUpsertPipeline(t *testing.T) {
 		PipelineType:  "metadata",
 		SourceConfig:  map[string]any{"type": "DatabaseMetadata"},
 		AirflowConfig: map[string]any{"scheduleInterval": "0 2 * * *"},
-		Service:       map[string]any{"id": "svc-uuid", "type": "databaseService"},
+		Service:       EntityRef{ID: "svc-uuid", Type: "databaseService"},
 	})
 
 	if err != nil {

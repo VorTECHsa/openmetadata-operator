@@ -72,4 +72,7 @@ const (
 
 	// ReasonServiceNotFound indicates the referenced service entity could not be found in OpenMetadata.
 	ReasonServiceNotFound = "ServiceNotFound"
+
+	// ReasonOwnerResolutionFailed indicates an owner could not be resolved to an OpenMetadata UUID.
+	ReasonOwnerResolutionFailed = "OwnerResolutionFailed"
 )
