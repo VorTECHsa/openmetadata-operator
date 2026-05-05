@@ -23,6 +23,7 @@ rules:
   - openmetadata.vortexa.com
   resources:
   - ingestionpipelines
+  - openmetadataentitytags
   - openmetadataservices
   - openmetadatatestcases
   verbs:
@@ -37,6 +38,7 @@ rules:
   - openmetadata.vortexa.com
   resources:
   - ingestionpipelines/finalizers
+  - openmetadataentitytags/finalizers
   - openmetadataservices/finalizers
   - openmetadatatestcases/finalizers
   verbs:
@@ -45,6 +47,7 @@ rules:
   - openmetadata.vortexa.com
   resources:
   - ingestionpipelines/status
+  - openmetadataentitytags/status
   - openmetadataservices/status
   - openmetadatatestcases/status
   verbs:

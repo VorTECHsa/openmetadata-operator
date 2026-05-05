@@ -101,3 +101,41 @@ type TestCaseResponse struct {
 type entityIDResponse struct {
 	ID string `json:"id"`
 }
+
+// EntitySummary is the minimal entity information needed to apply tags.
+// Returned by SearchEntities and stored in OpenMetadataEntityTag status.
+type EntitySummary struct {
+	ID                 string `json:"id"`
+	FullyQualifiedName string `json:"fullyQualifiedName"`
+}
+
+// searchHit represents a single hit in an OpenMetadata search response.
+type searchHit struct {
+	Source EntitySummary `json:"_source"`
+}
+
+// searchResponse is the relevant subset of the OpenMetadata /v1/search/query
+// response.
+type searchResponse struct {
+	Hits struct {
+		Total struct {
+			Value int `json:"value"`
+		} `json:"total"`
+		Hits []searchHit `json:"hits"`
+	} `json:"hits"`
+}
+
+// AssetRef identifies an entity by id, type, and FQN. Used as the body of
+// bulk tag-asset operations.
+type AssetRef struct {
+	ID                 string `json:"id"`
+	Type               string `json:"type"`
+	FullyQualifiedName string `json:"fullyQualifiedName,omitempty"`
+}
+
+// AddTagToAssetsRequest is the payload for bulk tag-asset add/remove.
+// dryRun must be set to false to actually apply (OM defaults it to true).
+type AddTagToAssetsRequest struct {
+	DryRun bool       `json:"dryRun"`
+	Assets []AssetRef `json:"assets"`
+}
