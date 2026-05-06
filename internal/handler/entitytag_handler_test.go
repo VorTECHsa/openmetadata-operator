@@ -75,41 +75,47 @@ func TestDiffAssetsEmpty(t *testing.T) {
 	}
 }
 
-func TestSplitAppliedByTag(t *testing.T) {
-	in := []omv1alpha1.TagAssignment{
-		{TagFQN: "Tier.Tier3", EntityID: "1"},
-		{TagFQN: "Tier.Tier5", EntityID: "2"},
-		{TagFQN: "Tier.Tier3", EntityID: "3"},
+func TestRecordedTagFQN(t *testing.T) {
+	tests := []struct {
+		name        string
+		assignments []omv1alpha1.TagAssignment
+		want        string
+	}{
+		{name: "empty status returns empty string", assignments: nil, want: ""},
+		{
+			name: "single entry returns its tag",
+			assignments: []omv1alpha1.TagAssignment{
+				{TagFQN: "Tier.Tier3", EntityID: "1"},
+			},
+			want: "Tier.Tier3",
+		},
+		{
+			name: "multiple entries return first (invariant: all share same tag)",
+			assignments: []omv1alpha1.TagAssignment{
+				{TagFQN: "Tier.Tier3", EntityID: "1"},
+				{TagFQN: "Tier.Tier3", EntityID: "2"},
+			},
+			want: "Tier.Tier3",
+		},
 	}
-
-	// Desired = Tier.Tier3: those go into current; Tier5 is stale.
-	current, stale := splitAppliedByTag(in, "Tier.Tier3")
-	if len(current) != 2 {
-		t.Errorf("current size = %d, want 2", len(current))
-	}
-	if len(stale["Tier.Tier5"]) != 1 {
-		t.Errorf("stale[Tier.Tier5] size = %d, want 1", len(stale["Tier.Tier5"]))
-	}
-	if _, ok := stale["Tier.Tier3"]; ok {
-		t.Errorf("desired tag should not appear in stale map")
-	}
-
-	// Empty desired (used by HandleDeletion) puts everything in stale.
-	current, stale = splitAppliedByTag(in, "")
-	if len(current) != 0 {
-		t.Errorf("expected empty current when desired is unset, got %d", len(current))
-	}
-	if len(stale["Tier.Tier3"]) != 2 || len(stale["Tier.Tier5"]) != 1 {
-		t.Errorf("stale grouping wrong: %+v", stale)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			et := &omv1alpha1.OpenMetadataEntityTag{
+				Status: omv1alpha1.OpenMetadataEntityTagStatus{TagAssignments: tt.assignments},
+			}
+			if got := recordedTagFQN(et); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestAssetRefsFromApplied(t *testing.T) {
+func TestAssetRefsFromAssignments(t *testing.T) {
 	in := []omv1alpha1.TagAssignment{
 		{EntityType: omv1alpha1.TaggableEntityTypeTable, EntityID: "id-1", FullyQualifiedName: "svc.db.s.t1", TagFQN: "Tier.Tier3"},
 		{EntityType: omv1alpha1.TaggableEntityTypeTable, EntityID: "id-2", FullyQualifiedName: "svc.db.s.t2", TagFQN: "Tier.Tier3"},
 	}
-	got := assetRefsFromApplied(in)
+	got := assetRefsFromAssignments(in)
 	if len(got) != 2 {
 		t.Fatalf("len = %d, want 2", len(got))
 	}

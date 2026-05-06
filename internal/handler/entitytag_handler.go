@@ -39,16 +39,29 @@ import (
 // a tag by FQN (GET /api/v1/tags/name/{fqn}).
 const tagsEntityTypePath = "tags"
 
-// EntityTagHandler contains the business logic for reconciling
-// OpenMetadataEntityTag resources against the OpenMetadata API.
+// EntityTagHandler reconciles OpenMetadataEntityTag resources against
+// the OpenMetadata API.
 type EntityTagHandler struct {
 	Client      client.Client
 	Recorder    events.EventRecorder
 	NewOMClient func(baseURL, token string) omclient.EntityTagClient
 }
 
-// Reconcile applies the desired tags to entities matched by the spec and
-// reconciles any drift against status.appliedTags.
+// Reconcile follows Observe → Compare → Converge:
+//   - Observe: validate inputs, resolve the OM connection, look up the tag's UUID.
+//   - Compare: search OM for entities matching the spec's includes/excludes.
+//   - Converge: pick one of two paths based on what status records:
+//     1) Steady state — tag in status is the same as in spec, so we just
+//     add the tag to matched entities that don't have it yet and remove it
+//     from entities that the spec no longer matches.
+//     2) Rename — tag in status differs from spec, so we add the new tag
+//     to every matched entity and remove the old tag from every entity
+//     listed in status.
+//
+// Status invariant: after every successful reconcile, every entry in
+// status.TagAssignments shares the same tagFQN — the one written this run.
+// We use that to detect renames cheaply: if the tagFQN recorded in status
+// differs from the spec's, the user has changed the desired tag.
 func (h *EntityTagHandler) Reconcile(ctx context.Context, et *omv1alpha1.OpenMetadataEntityTag) (ctrl.Result, error) {
 	logger := logf.FromContext(ctx)
 
@@ -60,24 +73,11 @@ func (h *EntityTagHandler) Reconcile(ctx context.Context, et *omv1alpha1.OpenMet
 		return ctrl.Result{}, nil
 	}
 
-	// Resolve OpenMetadataConnection.
-	conn := &omv1alpha1.OpenMetadataConnection{}
-	if err := h.Client.Get(ctx, types.NamespacedName{Name: et.Spec.OpenMetadataConnectionRef}, conn); err != nil {
-		logger.Error(err, "Failed to resolve OpenMetadataConnection", "ref", et.Spec.OpenMetadataConnectionRef)
-		h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonConnectionNotFound, err.Error())
-		return ctrl.Result{}, err
-	}
-
-	token, err := resolveAuthToken(ctx, h.Client, conn.Spec.AuthSecretRef)
+	omClient, err := h.resolveOMClient(ctx, et)
 	if err != nil {
-		logger.Error(err, "Failed to resolve auth token")
-		h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonAuthTokenUnavailable, err.Error())
 		return ctrl.Result{}, err
 	}
 
-	omClient := h.NewOMClient(conn.Spec.URL, token)
-
-	// Resolve FQN to UUID: the endpoints that attach/detach the tag to/from assets take the tag's UUID in the URL path.
 	tagFQN := et.Spec.Tag.TagFQN
 	tagID, err := omClient.GetEntityByName(ctx, tagsEntityTypePath, tagFQN)
 	if err != nil {
@@ -102,68 +102,25 @@ func (h *EntityTagHandler) Reconcile(ctx context.Context, et *omv1alpha1.OpenMet
 
 	// --- Converge ---
 
-	// Split status.TagAssignments into entries for the current desired tag (used to
-	// compute the add/remove diff) and entries for any other tag (left over
-	// from a previous spec — clean those up so renames take effect cleanly).
-	previousForTag, staleByTag := splitAppliedByTag(et.Status.TagAssignments, tagFQN)
-
-	toAdd, toRemove := diffAssets(matched, previousForTag, et.Spec.Match.EntityType)
-	if len(toAdd) > 0 {
-		if err := omClient.BulkAddTagToAssets(ctx, tagID, toAdd); err != nil {
-			logger.Error(err, "Failed to bulk-add tag", "tagFQN", tagFQN)
-			h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonTaggingFailed, err.Error())
-			h.emitEvent(et, corev1.EventTypeWarning, omv1alpha1.ReasonTaggingFailed, err.Error())
+	// Rename path triggers only when status records a tag (status non-empty)
+	// and that recorded tag differs from what the spec now wants.
+	if oldTagFQN := recordedTagFQN(et); oldTagFQN != "" && oldTagFQN != tagFQN {
+		if err := h.applyRename(ctx, omClient, et, tagID, oldTagFQN, matched); err != nil {
 			return ctrl.Result{}, err
 		}
-	}
-	if len(toRemove) > 0 {
-		if err := omClient.BulkRemoveTagFromAssets(ctx, tagID, toRemove); err != nil {
-			logger.Error(err, "Failed to bulk-remove tag", "tagFQN", tagFQN)
-			h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonTaggingFailed, err.Error())
-			h.emitEvent(et, corev1.EventTypeWarning, omv1alpha1.ReasonTaggingFailed, err.Error())
+	} else {
+		if err := h.applyDiff(ctx, omClient, et, tagID, matched); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	// Rename cleanup: remove any stale tag we previously applied under a
-	// different FQN. 404 on the stale tag means it's already gone — fine.
-	for staleFQN, applied := range staleByTag {
-		staleID, err := omClient.GetEntityByName(ctx, tagsEntityTypePath, staleFQN)
-		if err != nil {
-			if omclient.IsNotFound(err) {
-				continue
-			}
-			logger.Error(err, "Failed to resolve stale tag for cleanup", "tagFQN", staleFQN)
-			h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonTagResolutionFailed, err.Error())
-			return ctrl.Result{}, err
-		}
-		if err := omClient.BulkRemoveTagFromAssets(ctx, staleID, assetRefsFromApplied(applied)); err != nil {
-			logger.Error(err, "Failed to bulk-remove stale tag", "tagFQN", staleFQN)
-			h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonTaggingFailed, err.Error())
-			return ctrl.Result{}, err
-		}
-	}
-
-	// New status: the desired tag on every matched entity.
-	desiredApplied := make([]omv1alpha1.TagAssignment, 0, len(matched))
-	for _, e := range matched {
-		desiredApplied = append(desiredApplied, omv1alpha1.TagAssignment{
-			EntityType:         et.Spec.Match.EntityType,
-			EntityID:           e.ID,
-			FullyQualifiedName: e.FullyQualifiedName,
-			TagFQN:             tagFQN,
-		})
-	}
-	sort.Slice(desiredApplied, func(i, j int) bool {
-		return desiredApplied[i].FullyQualifiedName < desiredApplied[j].FullyQualifiedName
-	})
-
+	// Persist new status: the desired tag on every matched entity.
+	et.Status.TagAssignments = buildAssignments(matched, et.Spec.Match.EntityType, tagFQN)
 	now := metav1.Now()
-	et.Status.TagAssignments = desiredApplied
 	et.Status.LastReconcileTime = &now
 	et.Status.ObservedGeneration = et.Generation
 
-	msg := fmt.Sprintf("Applied %s to %d %s entit(ies)", tagFQN, len(matched), et.Spec.Match.EntityType)
+	msg := fmt.Sprintf("Applied %s to %d %s entities", tagFQN, len(matched), et.Spec.Match.EntityType)
 	h.setConditionAndPersist(ctx, et, metav1.ConditionTrue, omv1alpha1.ReasonInSync, msg)
 	h.emitEvent(et, corev1.EventTypeNormal, omv1alpha1.ReasonInSync, msg)
 
@@ -173,9 +130,59 @@ func (h *EntityTagHandler) Reconcile(ctx context.Context, et *omv1alpha1.OpenMet
 	return ctrl.Result{RequeueAfter: requeueInterval}, nil
 }
 
-// HandleDeletion removes our previously-applied tags from each entity recorded
-// in status.appliedTags, then releases the finalizer. Iterates by TagFQN to
-// support cleanup of historical specs (renames left lingering tags in status).
+// applyDiff is the steady-state path: status.TagAssignments either records the
+// same tagFQN as the spec (or is empty on first reconcile). Diff matched
+// entities against what we previously applied — bulk-add newcomers, bulk-remove
+// the ones that fell out of scope.
+func (h *EntityTagHandler) applyDiff(ctx context.Context, omClient omclient.EntityTagClient, et *omv1alpha1.OpenMetadataEntityTag, tagID string, matched []omclient.EntitySummary) error {
+	toAdd, toRemove := diffAssets(matched, et.Status.TagAssignments, et.Spec.Match.EntityType)
+
+	if len(toAdd) > 0 {
+		if err := omClient.BulkAddTagToAssets(ctx, tagID, toAdd); err != nil {
+			return h.failTagging(ctx, et, "Failed to bulk-add tag", err)
+		}
+	}
+	if len(toRemove) > 0 {
+		if err := omClient.BulkRemoveTagFromAssets(ctx, tagID, toRemove); err != nil {
+			return h.failTagging(ctx, et, "Failed to bulk-remove tag", err)
+		}
+	}
+	return nil
+}
+
+// applyRename is the rename path: status.TagAssignments records assignments
+// under oldTagFQN, but the spec now wants tagFQN. Apply the new tag to every
+// matched entity (no diff needed — by invariant none of them carry it yet
+// from this CR), then remove the old tag from every entity we previously
+// applied it to. 404 on the old tag's lookup means it's already gone in OM
+// — fine, nothing to remove.
+func (h *EntityTagHandler) applyRename(ctx context.Context, omClient omclient.EntityTagClient, et *omv1alpha1.OpenMetadataEntityTag, tagID, oldTagFQN string, matched []omclient.EntitySummary) error {
+	if newRefs := assetRefsFromMatched(matched, et.Spec.Match.EntityType); len(newRefs) > 0 {
+		if err := omClient.BulkAddTagToAssets(ctx, tagID, newRefs); err != nil {
+			return h.failTagging(ctx, et, "Failed to bulk-add tag during rename", err)
+		}
+	}
+
+	oldTagID, err := omClient.GetEntityByName(ctx, tagsEntityTypePath, oldTagFQN)
+	if err != nil {
+		if omclient.IsNotFound(err) {
+			return nil
+		}
+		logf.FromContext(ctx).Error(err, "Failed to resolve old tag for rename cleanup", "tagFQN", oldTagFQN)
+		h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonTagResolutionFailed, err.Error())
+		return err
+	}
+	oldRefs := assetRefsFromAssignments(et.Status.TagAssignments)
+	if err := omClient.BulkRemoveTagFromAssets(ctx, oldTagID, oldRefs); err != nil {
+		return h.failTagging(ctx, et, "Failed to bulk-remove old tag during rename", err)
+	}
+	return nil
+}
+
+// HandleDeletion removes our previously-applied tags from each recorded asset,
+// then releases the finalizer. Iterates by tagFQN so the rare case of a CR
+// being deleted mid-rename (status holds entries under more than one FQN) is
+// handled correctly.
 func (h *EntityTagHandler) HandleDeletion(ctx context.Context, et *omv1alpha1.OpenMetadataEntityTag) (ctrl.Result, error) {
 	logger := logf.FromContext(ctx)
 
@@ -184,34 +191,20 @@ func (h *EntityTagHandler) HandleDeletion(ctx context.Context, et *omv1alpha1.Op
 	}
 
 	if len(et.Status.TagAssignments) > 0 {
-		conn := &omv1alpha1.OpenMetadataConnection{}
-		if err := h.Client.Get(ctx, types.NamespacedName{Name: et.Spec.OpenMetadataConnectionRef}, conn); err != nil {
-			logger.Error(err, "Cannot resolve OpenMetadataConnection during deletion, retrying")
-			return ctrl.Result{}, err
-		}
-
-		token, err := resolveAuthToken(ctx, h.Client, conn.Spec.AuthSecretRef)
+		omClient, err := h.resolveOMClient(ctx, et)
 		if err != nil {
-			logger.Error(err, "Cannot resolve auth token during deletion, retrying")
 			return ctrl.Result{}, err
 		}
 
-		omClient := h.NewOMClient(conn.Spec.URL, token)
-
-		// Group applied tags by FQN (typically one bucket — only multiple if a
-		// rename was in flight when the CR was deleted). Resolve each FQN to
-		// its UUID and bulk-remove. 404s are treated as success (already gone).
-		_, byTag := splitAppliedByTag(et.Status.TagAssignments, "")
-		for tagFQN, applied := range byTag {
-			tagID, err := omClient.GetEntityByName(ctx, tagsEntityTypePath, tagFQN)
-			if err != nil {
-				if omclient.IsNotFound(err) {
-					continue
-				}
-				logger.Error(err, "Failed to resolve tag for deletion", "tagFQN", tagFQN)
-				return ctrl.Result{}, err
-			}
-			if err := omClient.BulkRemoveTagFromAssets(ctx, tagID, assetRefsFromApplied(applied)); err != nil {
+		tagFQN := recordedTagFQN(et)
+		tagID, err := omClient.GetEntityByName(ctx, tagsEntityTypePath, tagFQN)
+		if err != nil && !omclient.IsNotFound(err) {
+			logger.Error(err, "Failed to resolve tag for deletion", "tagFQN", tagFQN)
+			return ctrl.Result{}, err
+		}
+		// On 404 the tag is already gone in OM, so there's nothing to remove.
+		if err == nil {
+			if err := omClient.BulkRemoveTagFromAssets(ctx, tagID, assetRefsFromAssignments(et.Status.TagAssignments)); err != nil {
 				logger.Error(err, "Failed to bulk-remove tag during deletion", "tagFQN", tagFQN)
 				h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonTaggingFailed, err.Error())
 				return ctrl.Result{}, err
@@ -225,27 +218,82 @@ func (h *EntityTagHandler) HandleDeletion(ctx context.Context, et *omv1alpha1.Op
 	return ctrl.Result{}, nil
 }
 
-// splitAppliedByTag partitions status entries into those whose TagFQN matches
-// `desired` (returned as a flat slice) and the rest grouped by their TagFQN.
-// Pass an empty `desired` to fall through and group everything.
-func splitAppliedByTag(applied []omv1alpha1.TagAssignment, desired string) ([]omv1alpha1.TagAssignment, map[string][]omv1alpha1.TagAssignment) {
-	var current []omv1alpha1.TagAssignment
-	other := make(map[string][]omv1alpha1.TagAssignment)
-	for _, a := range applied {
-		if a.TagFQN == desired {
-			current = append(current, a)
-		} else {
-			other[a.TagFQN] = append(other[a.TagFQN], a)
-		}
+// resolveOMClient resolves the OpenMetadataConnection ref and auth token for
+// the given CR, returning a configured client. Sets the appropriate condition
+// and persists status on failure.
+func (h *EntityTagHandler) resolveOMClient(ctx context.Context, et *omv1alpha1.OpenMetadataEntityTag) (omclient.EntityTagClient, error) {
+	logger := logf.FromContext(ctx)
+
+	conn := &omv1alpha1.OpenMetadataConnection{}
+	if err := h.Client.Get(ctx, types.NamespacedName{Name: et.Spec.OpenMetadataConnectionRef}, conn); err != nil {
+		logger.Error(err, "Failed to resolve OpenMetadataConnection", "ref", et.Spec.OpenMetadataConnectionRef)
+		h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonConnectionNotFound, err.Error())
+		return nil, err
 	}
-	return current, other
+
+	token, err := resolveAuthToken(ctx, h.Client, conn.Spec.AuthSecretRef)
+	if err != nil {
+		logger.Error(err, "Failed to resolve auth token")
+		h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonAuthTokenUnavailable, err.Error())
+		return nil, err
+	}
+
+	return h.NewOMClient(conn.Spec.URL, token), nil
 }
 
-// assetRefsFromApplied converts AppliedTag status entries into AssetRefs for
-// the bulk tag-asset endpoint.
-func assetRefsFromApplied(applied []omv1alpha1.TagAssignment) []omclient.AssetRef {
-	refs := make([]omclient.AssetRef, 0, len(applied))
-	for _, a := range applied {
+// When a bulk tag-asset call fails.
+func (h *EntityTagHandler) failTagging(ctx context.Context, et *omv1alpha1.OpenMetadataEntityTag, msg string, err error) error {
+	logf.FromContext(ctx).Error(err, msg)
+	h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonTaggingFailed, err.Error())
+	h.emitEvent(et, corev1.EventTypeWarning, omv1alpha1.ReasonTaggingFailed, err.Error())
+	return err
+}
+
+// recordedTagFQN returns the tagFQN recorded in status, or "" if status is
+// empty (first reconcile). Relies on the status invariant that every entry
+// shares the same tagFQN, so the first entry is representative.
+func recordedTagFQN(et *omv1alpha1.OpenMetadataEntityTag) string {
+	if len(et.Status.TagAssignments) == 0 {
+		return ""
+	}
+	return et.Status.TagAssignments[0].TagFQN
+}
+
+// buildAssignments returns one TagAssignment per matched entity, sorted by
+// FQN for stable status output.
+func buildAssignments(matched []omclient.EntitySummary, entityType omv1alpha1.TaggableEntityType, tagFQN string) []omv1alpha1.TagAssignment {
+	out := make([]omv1alpha1.TagAssignment, 0, len(matched))
+	for _, e := range matched {
+		out = append(out, omv1alpha1.TagAssignment{
+			EntityType:         entityType,
+			EntityID:           e.ID,
+			FullyQualifiedName: e.FullyQualifiedName,
+			TagFQN:             tagFQN,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].FullyQualifiedName < out[j].FullyQualifiedName
+	})
+	return out
+}
+
+// assetRefsFromMatched converts search results into AssetRefs for the bulk
+// tag-asset endpoint.
+func assetRefsFromMatched(matched []omclient.EntitySummary, entityType omv1alpha1.TaggableEntityType) []omclient.AssetRef {
+	refs := make([]omclient.AssetRef, 0, len(matched))
+	for _, e := range matched {
+		refs = append(refs, omclient.AssetRef{
+			ID: e.ID, Type: string(entityType), FullyQualifiedName: e.FullyQualifiedName,
+		})
+	}
+	return refs
+}
+
+// assetRefsFromAssignments converts status.TagAssignments entries into
+// AssetRefs for the bulk tag-asset endpoint.
+func assetRefsFromAssignments(assignments []omv1alpha1.TagAssignment) []omclient.AssetRef {
+	refs := make([]omclient.AssetRef, 0, len(assignments))
+	for _, a := range assignments {
 		refs = append(refs, omclient.AssetRef{
 			ID: a.EntityID, Type: string(a.EntityType), FullyQualifiedName: a.FullyQualifiedName,
 		})
@@ -253,9 +301,9 @@ func assetRefsFromApplied(applied []omv1alpha1.TagAssignment) []omclient.AssetRe
 	return refs
 }
 
-// diffAssets computes adds (entities matched now but not previously applied)
-// and removes (entities previously applied but no longer matched). Identity is
-// by entity ID.
+// diffAssets computes adds (in matched but not previously applied) and
+// removes (previously applied but no longer matched). Identity is by
+// entity ID.
 func diffAssets(matched []omclient.EntitySummary, previous []omv1alpha1.TagAssignment, entityType omv1alpha1.TaggableEntityType) (toAdd, toRemove []omclient.AssetRef) {
 	matchedByID := make(map[string]omclient.EntitySummary, len(matched))
 	for _, e := range matched {

@@ -59,9 +59,7 @@ spec:
                 description: Match selects the entities this CR applies to.
                 properties:
                   entityType:
-                    description: |-
-                      EntityType is the OpenMetadata entity type to match. Must be one of the
-                      supported lower-level types (table, topic, databaseSchema, database, etc.).
+                    description: EntityType is the OpenMetadata entity type to match.
                     enum:
                     - table
                     - topic
@@ -102,9 +100,7 @@ spec:
                 minLength: 1
                 type: string
               tag:
-                description: |-
-                  Tag is the tag to apply to every matched entity.
-                  To apply more than one tag to the same entity set, use one CR per tag.
+                description: Tag is the tag to apply to every matched entity.
                 properties:
                   tagFQN:
                     description: |-
@@ -198,8 +194,7 @@ spec:
               tagAssignments:
                 description: |-
                   TagAssignments is the set of (entity, tag) assignments the operator has
-                  applied. The operator manages only these assignments additively — tags
-                  set via the OM UI or by other controllers are left untouched.
+                  applied.
                 items:
                   description: |-
                     TagAssignment records a single (entity, tag) assignment the operator has
