@@ -39,6 +39,9 @@ type OpenMetadataEntityTagReconciler struct {
 // +kubebuilder:rbac:groups=openmetadata.vortexa.com,resources=openmetadataentitytags,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=openmetadata.vortexa.com,resources=openmetadataentitytags/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=openmetadata.vortexa.com,resources=openmetadataentitytags/finalizers,verbs=update
+// +kubebuilder:rbac:groups=openmetadata.vortexa.com,resources=openmetadataconnections,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile handles a single reconciliation loop for an OpenMetadataEntityTag resource.
 func (r *OpenMetadataEntityTagReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
