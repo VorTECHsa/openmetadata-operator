@@ -118,9 +118,6 @@ type searchHit struct {
 // response.
 type searchResponse struct {
 	Hits struct {
-		Total struct {
-			Value int `json:"value"`
-		} `json:"total"`
 		Hits []searchHit `json:"hits"`
 	} `json:"hits"`
 }

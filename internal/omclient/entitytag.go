@@ -76,10 +76,6 @@ func (c *Client) SearchEntities(ctx context.Context, searchIndex string, include
 			break
 		}
 		from += searchPageSize
-		// Defensive cap to avoid runaway pagination on a misbehaving backend.
-		if from >= page.Hits.Total.Value {
-			break
-		}
 	}
 	return out, nil
 }

@@ -179,10 +179,10 @@ func (h *EntityTagHandler) applyRename(ctx context.Context, omClient omclient.En
 	return nil
 }
 
-// HandleDeletion removes our previously-applied tags from each recorded asset,
-// then releases the finalizer. Iterates by tagFQN so the rare case of a CR
-// being deleted mid-rename (status holds entries under more than one FQN) is
-// handled correctly.
+// HandleDeletion removes our previously-applied tag from each recorded asset,
+// then releases the finalizer. Relies on the status invariant that every entry
+// in status.TagAssignments shares a single tagFQN, so a single bulk-remove
+// suffices.
 func (h *EntityTagHandler) HandleDeletion(ctx context.Context, et *omv1alpha1.OpenMetadataEntityTag) (ctrl.Result, error) {
 	logger := logf.FromContext(ctx)
 
@@ -241,7 +241,9 @@ func (h *EntityTagHandler) resolveOMClient(ctx context.Context, et *omv1alpha1.O
 	return h.NewOMClient(conn.Spec.URL, token), nil
 }
 
-// When a bulk tag-asset call fails.
+// failTagging logs a bulk tag-asset failure, records it on the CR's Ready
+// condition with reason ReasonTaggingFailed, emits a warning event, and
+// returns the original error for the caller to propagate.
 func (h *EntityTagHandler) failTagging(ctx context.Context, et *omv1alpha1.OpenMetadataEntityTag, msg string, err error) error {
 	logf.FromContext(ctx).Error(err, msg)
 	h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonTaggingFailed, err.Error())

@@ -205,7 +205,7 @@ var _ = Describe("OpenMetadataEntityTag Controller", func() {
 		}
 		reconciler := newEntityTagReconciler(stub)
 
-		// Reconcile twice to populate status.appliedTags.
+		// Reconcile twice: first adds the finalizer, second populates status.TagAssignments.
 		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
 		Expect(err).NotTo(HaveOccurred())
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
