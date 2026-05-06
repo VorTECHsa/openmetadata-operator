@@ -81,11 +81,6 @@ func (h *EntityTagHandler) Reconcile(ctx context.Context, et *omv1alpha1.OpenMet
 	tagFQN := et.Spec.Tag.TagFQN
 	tagID, err := omClient.GetEntityByName(ctx, tagsEntityTypePath, tagFQN)
 	if err != nil {
-		if omclient.IsNotFound(err) {
-			h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonTagResolutionFailed,
-				fmt.Sprintf("tag not found: %q", tagFQN))
-			return ctrl.Result{}, nil
-		}
 		logger.Error(err, "Failed to resolve tag", "tagFQN", tagFQN)
 		h.setConditionAndPersist(ctx, et, metav1.ConditionFalse, omv1alpha1.ReasonTagResolutionFailed, err.Error())
 		return ctrl.Result{}, err
