@@ -75,4 +75,18 @@ const (
 
 	// ReasonOwnerResolutionFailed indicates an owner could not be resolved to an OpenMetadata UUID.
 	ReasonOwnerResolutionFailed = "OwnerResolutionFailed"
+
+	// ReasonTagResolutionFailed indicates a tag FQN could not be resolved against OpenMetadata.
+	ReasonTagResolutionFailed = "TagResolutionFailed"
+
+	// ReasonUnsupportedEntityType means this operator version doesn't support
+	// tagging the entity type the user specified in the CR.
+	ReasonUnsupportedEntityType = "UnsupportedEntityType"
+
+	// ReasonEntitySearchFailed means the search request to OpenMetadata itself
+	// failed (network error, OM unreachable, server error).
+	ReasonEntitySearchFailed = "EntitySearchFailed"
+
+	// ReasonTaggingFailed indicates applying or removing a tag on entities in OpenMetadata failed.
+	ReasonTaggingFailed = "TaggingFailed"
 )

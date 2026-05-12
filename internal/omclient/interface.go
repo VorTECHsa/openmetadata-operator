@@ -57,6 +57,28 @@ type PipelineClient interface {
 	GetEntityByName(ctx context.Context, entityTypePath, fqn string) (string, error)
 }
 
+// EntityTagClient defines operations for tagging entities the operator does
+// not create directly (tables, topics, schemas, etc.).
+type EntityTagClient interface {
+	// SearchEntities queries the named OpenMetadata search index, returning
+	// every entity whose fullyQualifiedName matches any of the include
+	// wildcard patterns and none of the exclude patterns. Pagination is
+	// handled internally.
+	SearchEntities(ctx context.Context, searchIndex string, includes, excludes []string) ([]EntitySummary, error)
+
+	// GetEntityByName retrieves any entity by type path and FQN, returning its ID.
+	// Used to resolve tag FQNs to UUIDs for the bulk tag-asset endpoint.
+	GetEntityByName(ctx context.Context, entityTypePath, fqn string) (string, error)
+
+	// BulkAddTagToAssets applies the tag identified by tagID to every asset
+	// listed in assets. Idempotent — assets already carrying the tag are unchanged.
+	BulkAddTagToAssets(ctx context.Context, tagID string, assets []AssetRef) error
+
+	// BulkRemoveTagFromAssets removes the tag identified by tagID from every
+	// asset listed in assets. Idempotent — assets without the tag are unchanged.
+	BulkRemoveTagFromAssets(ctx context.Context, tagID string, assets []AssetRef) error
+}
+
 // TestCaseClient defines operations for managing test cases.
 type TestCaseClient interface {
 	// UpsertTestCase creates or updates a test case via PUT.

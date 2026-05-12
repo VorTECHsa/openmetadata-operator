@@ -31,4 +31,7 @@ resources:
 - openmetadatatestcase_admin_role.yaml
 - openmetadatatestcase_editor_role.yaml
 - openmetadatatestcase_viewer_role.yaml
+- openmetadataentitytag_admin_role.yaml
+- openmetadataentitytag_editor_role.yaml
+- openmetadataentitytag_viewer_role.yaml
 
